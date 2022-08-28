@@ -75,7 +75,7 @@ static mut solar_Bodies: [body; BODIES_COUNT] = [
     },
 ];
 
-unsafe fn advance(bodies: *mut body) {
+unsafe fn advance(bodies: &mut [body; BODIES_COUNT]) {
     const INTERACTIONS_COUNT: usize = BODIES_COUNT*(BODIES_COUNT-1)/2;
     const ROUNDED_INTERACTIONS_COUNT: usize = INTERACTIONS_COUNT+INTERACTIONS_COUNT%2;
 
@@ -91,7 +91,7 @@ unsafe fn advance(bodies: *mut body) {
         for i in 0..BODIES_COUNT-1 {
             for j in i+1..BODIES_COUNT {
                 for m in 0..3 {
-                    position_Deltas[m].0[k] = (*bodies.add(i)).position[m] - (*bodies.add(j)).position[m];
+                    position_Deltas[m].0[k] = bodies[i].position[m] - bodies[j].position[m];
                 }
                 k += 1;
             }
@@ -151,11 +151,11 @@ unsafe fn advance(bodies: *mut body) {
         let mut k = 0;
         for i in 0..BODIES_COUNT-1 {
             for j in i+1..BODIES_COUNT {
-                let i_mass_magnitude = (*bodies.add(i)).mass * magnitudes.0[k];
-                let j_mass_magnitude = (*bodies.add(j)).mass * magnitudes.0[k];
+                let i_mass_magnitude = bodies[i].mass * magnitudes.0[k];
+                let j_mass_magnitude = bodies[j].mass * magnitudes.0[k];
                 for m in 0..3 {
-                    (*bodies.add(i)).velocity[m] -= position_Deltas[m].0[k] * j_mass_magnitude;
-                    (*bodies.add(j)).velocity[m] += position_Deltas[m].0[k] * i_mass_magnitude;
+                    bodies[i].velocity[m] -= position_Deltas[m].0[k] * j_mass_magnitude;
+                    bodies[j].velocity[m] += position_Deltas[m].0[k] * i_mass_magnitude;
                 }
                 k += 1;
             }
@@ -164,27 +164,26 @@ unsafe fn advance(bodies: *mut body) {
 
     for i in 0..BODIES_COUNT {
         for m in 0..3 {
-            (*bodies.add(i)).position[m] += 0.01 * (*bodies.add(i)).velocity[m];
+            bodies[i].position[m] += 0.01 * bodies[i].velocity[m];
         }
     }
 }
 
-unsafe fn offset_Momentum(bodies: *mut body) {
+fn offset_Momentum(bodies: &mut [body; BODIES_COUNT]) {
     for i in 0..BODIES_COUNT {
         for m in 0..3 {
-            (*bodies.add(0)).velocity[m] -=
-                (*bodies.add(i)).velocity[m] * (*bodies.add(i)).mass / SOLAR_MASS;
+            bodies[0].velocity[m] -= bodies[i].velocity[m] * bodies[i].mass / SOLAR_MASS;
         }
     }
 }
 
-unsafe fn output_Energy(bodies: *mut body) {
+unsafe fn output_Energy(bodies: &mut [body; BODIES_COUNT]) {
     let mut energy = 0.0;
     for i in 0..BODIES_COUNT {
-        energy += 0.5 * (*bodies.add(i)).mass * (
-            (*bodies.add(i)).velocity[0] * (*bodies.add(i)).velocity[0] +
-            (*bodies.add(i)).velocity[1] * (*bodies.add(i)).velocity[1] +
-            (*bodies.add(i)).velocity[2] * (*bodies.add(i)).velocity[2]
+        energy += 0.5 * bodies[i].mass * (
+            bodies[i].velocity[0] * bodies[i].velocity[0] +
+            bodies[i].velocity[1] * bodies[i].velocity[1] +
+            bodies[i].velocity[2] * bodies[i].velocity[2]
         );
 
         for j in i+1..BODIES_COUNT {
@@ -192,12 +191,12 @@ unsafe fn output_Energy(bodies: *mut body) {
             let mut position_Delta: [mem::MaybeUninit<f64>; 3] = mem::transmute(position_Delta);
             for m in 0..3 {
                 position_Delta[m].as_mut_ptr().write(
-                    (*bodies.add(i)).position[m] - (*bodies.add(j)).position[m]
+                    bodies[i].position[m] - bodies[j].position[m]
                 );
             }
             let position_Delta: [f64; 3] = mem::transmute(position_Delta);
 
-            energy -= (*bodies.add(i)).mass * (*bodies.add(j)).mass / f64::sqrt(
+            energy -= bodies[i].mass * bodies[j].mass / f64::sqrt(
                 position_Delta[0] * position_Delta[0] +
                 position_Delta[1] * position_Delta[1] +
                 position_Delta[2] * position_Delta[2]
@@ -210,12 +209,12 @@ unsafe fn output_Energy(bodies: *mut body) {
 
 fn main() {
     unsafe {
-        offset_Momentum(&mut solar_Bodies as *mut _);
-        output_Energy(&mut solar_Bodies as *mut _);
+        offset_Momentum(&mut solar_Bodies);
+        output_Energy(&mut solar_Bodies);
         let c = std::env::args().nth(1).unwrap().parse().unwrap();
         for _ in 0..c {
-            advance(&mut solar_Bodies as *mut _);
+            advance(&mut solar_Bodies);
         }
-        output_Energy(&mut solar_Bodies as *mut _);
+        output_Energy(&mut solar_Bodies);
     }
 }

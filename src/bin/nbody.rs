@@ -79,18 +79,34 @@ unsafe fn advance(bodies: &mut [body; BODIES_COUNT]) {
     const ROUNDED_INTERACTIONS_COUNT: usize = INTERACTIONS_COUNT+INTERACTIONS_COUNT%2;
 
     #[derive(Copy, Clone)]
-    #[repr(align(16))]
-    struct Align16([f64; ROUNDED_INTERACTIONS_COUNT]);
+    union Interactions {
+        scalars: [f64; ROUNDED_INTERACTIONS_COUNT],
+        vectors: [__m128d; ROUNDED_INTERACTIONS_COUNT / 2],
+    }
 
-    static mut position_Deltas: [Align16; 3] = [Align16([0.0; ROUNDED_INTERACTIONS_COUNT]); 3];
-    static mut magnitudes: Align16 = Align16([0.0; ROUNDED_INTERACTIONS_COUNT]);
+    impl Interactions {
+        fn as_scalars(&mut self) -> &mut [f64; ROUNDED_INTERACTIONS_COUNT] {
+            unsafe {
+                &mut self.scalars
+            }
+        }
+
+        fn as_vectors(&mut self) -> &mut [__m128d; ROUNDED_INTERACTIONS_COUNT / 2] {
+            unsafe {
+                &mut self.vectors
+            }
+        }
+    }
+
+    static mut position_Deltas: [Interactions; 3] = [Interactions { scalars: [0.0; ROUNDED_INTERACTIONS_COUNT] }; 3];
+    static mut magnitudes: Interactions = Interactions { scalars: [0.0; ROUNDED_INTERACTIONS_COUNT] };
 
     {
         let mut k = 0;
         for i in 0..BODIES_COUNT-1 {
             for j in i+1..BODIES_COUNT {
                 for m in 0..3 {
-                    position_Deltas[m].0[k] = bodies[i].position[m] - bodies[j].position[m];
+                    position_Deltas[m].as_scalars()[k] = bodies[i].position[m] - bodies[j].position[m];
                 }
                 k += 1;
             }
@@ -100,7 +116,7 @@ unsafe fn advance(bodies: &mut [body; BODIES_COUNT]) {
     for i in 0..ROUNDED_INTERACTIONS_COUNT/2 {
         let mut position_Delta = [_mm_setzero_pd(); 3];
         for m in 0..3 {
-            position_Delta[m] = *(&position_Deltas[m].0 as *const _ as *const __m128d).add(i);
+            position_Delta[m] = position_Deltas[m].as_vectors()[i];
         }
 
         let distance_Squared = _mm_add_pd(
@@ -131,26 +147,25 @@ unsafe fn advance(bodies: &mut [body; BODIES_COUNT]) {
             );
         }
 
-        (&mut magnitudes.0 as *mut _ as *mut __m128d).add(i).write(
+        magnitudes.as_vectors()[i] =
             _mm_mul_pd(
                 _mm_div_pd(
                     _mm_set1_pd(0.01),
                     distance_Squared,
                 ),
                 distance_Reciprocal,
-            )
-        );
+            );
     }
 
     {
         let mut k = 0;
         for i in 0..BODIES_COUNT-1 {
             for j in i+1..BODIES_COUNT {
-                let i_mass_magnitude = bodies[i].mass * magnitudes.0[k];
-                let j_mass_magnitude = bodies[j].mass * magnitudes.0[k];
+                let i_mass_magnitude = bodies[i].mass * magnitudes.as_scalars()[k];
+                let j_mass_magnitude = bodies[j].mass * magnitudes.as_scalars()[k];
                 for m in 0..3 {
-                    bodies[i].velocity[m] -= position_Deltas[m].0[k] * j_mass_magnitude;
-                    bodies[j].velocity[m] += position_Deltas[m].0[k] * i_mass_magnitude;
+                    bodies[i].velocity[m] -= position_Deltas[m].as_scalars()[k] * j_mass_magnitude;
+                    bodies[j].velocity[m] += position_Deltas[m].as_scalars()[k] * i_mass_magnitude;
                 }
                 k += 1;
             }

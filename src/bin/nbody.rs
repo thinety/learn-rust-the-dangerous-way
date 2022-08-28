@@ -1,6 +1,5 @@
 #![allow(non_snake_case, non_upper_case_globals)]
 
-use std::mem;
 use std::arch::x86_64::*;
 use std::f64::consts::PI;
 
@@ -99,14 +98,10 @@ unsafe fn advance(bodies: &mut [body; BODIES_COUNT]) {
     }
 
     for i in 0..ROUNDED_INTERACTIONS_COUNT/2 {
-        let position_Delta: mem::MaybeUninit<[__m128d; 3]> = mem::MaybeUninit::uninit();
-        let mut position_Delta: [mem::MaybeUninit<__m128d>; 3] = mem::transmute(position_Delta);
+        let mut position_Delta = [_mm_setzero_pd(); 3];
         for m in 0..3 {
-            position_Delta[m].as_mut_ptr().write(
-                *(&position_Deltas[m].0 as *const _ as *const __m128d).add(i)
-            );
+            position_Delta[m] = *(&position_Deltas[m].0 as *const _ as *const __m128d).add(i);
         }
-        let position_Delta: [__m128d; 3] = mem::transmute(position_Delta);
 
         let distance_Squared = _mm_add_pd(
             _mm_add_pd(
@@ -177,7 +172,7 @@ fn offset_Momentum(bodies: &mut [body; BODIES_COUNT]) {
     }
 }
 
-unsafe fn output_Energy(bodies: &mut [body; BODIES_COUNT]) {
+fn output_Energy(bodies: &mut [body; BODIES_COUNT]) {
     let mut energy = 0.0;
     for i in 0..BODIES_COUNT {
         energy += 0.5 * bodies[i].mass * (
@@ -187,14 +182,10 @@ unsafe fn output_Energy(bodies: &mut [body; BODIES_COUNT]) {
         );
 
         for j in i+1..BODIES_COUNT {
-            let position_Delta: mem::MaybeUninit<[f64; 3]> = mem::MaybeUninit::uninit();
-            let mut position_Delta: [mem::MaybeUninit<f64>; 3] = mem::transmute(position_Delta);
+            let mut position_Delta = [0.0; 3];
             for m in 0..3 {
-                position_Delta[m].as_mut_ptr().write(
-                    bodies[i].position[m] - bodies[j].position[m]
-                );
+                position_Delta[m] = bodies[i].position[m] - bodies[j].position[m];
             }
-            let position_Delta: [f64; 3] = mem::transmute(position_Delta);
 
             energy -= bodies[i].mass * bodies[j].mass / f64::sqrt(
                 position_Delta[0] * position_Delta[0] +
